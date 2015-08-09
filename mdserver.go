@@ -91,6 +91,7 @@ func load_post(md string) (Post, int, error) {
 			// файл не существует
 			return Post{}, http.StatusNotFound, err
 		}
+		return Post{}, 500, err
 	}
 	if info.IsDir() {
 		// не файл, а папка
