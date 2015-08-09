@@ -18,10 +18,18 @@ type Post struct {
 	Body  template.HTML
 }
 
+type CacheEntry struct {
+	ModTime int64
+	title   string
+	Body    template.HTML
+}
+
 var (
 	// компилируем шаблоны, если не удалось, то выходим
 	post_template  = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "post.html")))
 	error_template = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "error.html")))
+
+	cache map[string]CacheEntry = make(map[string]CacheEntry)
 )
 
 func main() {
@@ -88,12 +96,16 @@ func load_post(md string) (Post, int, error) {
 		// не файл, а папка
 		return Post{}, http.StatusNotFound, fmt.Errorf("dir")
 	}
-	fileread, _ := ioutil.ReadFile(md)
-	lines := strings.Split(string(fileread), "\n")
-	title := string(lines[0])
-	body := strings.Join(lines[1:len(lines)], "\n")
-	body = string(blackfriday.MarkdownCommon([]byte(body)))
-	post := Post{title, template.HTML(body)}
+	val, ok := cache[md]
+	if !ok || (ok && val.ModTime != info.ModTime().UnixNano()) {
+		fileread, _ := ioutil.ReadFile(md)
+		lines := strings.Split(string(fileread), "\n")
+		title := string(lines[0])
+		body := strings.Join(lines[1:len(lines)], "\n")
+		body = string(blackfriday.MarkdownCommon([]byte(body)))
+		cache[md] = CacheEntry{info.ModTime().UnixNano(), title, template.HTML(body)}
+	}
+	post := Post{cache[md].title, cache[md].Body}
 	return post, 200, nil
 }
 
