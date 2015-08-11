@@ -111,6 +111,7 @@ func load_post(md string) (Post, int, error) {
 }
 
 func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
+	log.Printf("error %d %s %s\n", status, r.RemoteAddr, r.URL.Path)
 	w.WriteHeader(status)
 	if err := error_template.ExecuteTemplate(w, "layout", map[string]interface{}{"Error": http.StatusText(status), "Status": status}); err != nil {
 		log.Println(err.Error())
