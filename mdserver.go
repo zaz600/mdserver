@@ -1,35 +1,20 @@
 package main
 
 import (
-	"fmt"
-	"github.com/bmizerany/pat"
-	"github.com/russross/blackfriday"
 	"html/template"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"path"
 	"strings"
+
+	"github.com/bmizerany/pat"
 )
-
-type Post struct {
-	Title string
-	Body  template.HTML
-}
-
-type CacheEntry struct {
-	ModTime int64
-	title   string
-	Body    template.HTML
-}
 
 var (
 	// компилируем шаблоны, если не удалось, то выходим
-	post_template  = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "post.html")))
-	error_template = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "error.html")))
-
-	cache map[string]CacheEntry = make(map[string]CacheEntry)
+	postTemplate  = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "post.html")))
+	errorTemplate = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "error.html")))
+	posts         = newPostArray()
 )
 
 func main() {
@@ -47,7 +32,7 @@ func main() {
 
 	http.Handle("/", mux)
 	log.Println("Listening...")
-	http.ListenAndServe(":3000", nil)
+	http.ListenAndServe(":8890", nil)
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
@@ -60,60 +45,31 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	// Например, posts/p1
 	p := path.Join("posts", page)
 
-	var post_md string
+	var postMD string
 	if page != "" {
 		// если page не пусто, то считаем, что запрашивается файл
 		// получим posts/p1.md
-		post_md = p + ".md"
+		postMD = p + ".md"
 	} else {
 		// если page пусто, то выдаем главную
-		post_md = p + "/index.md"
+		postMD = p + "/index.md"
 	}
 
-	post, status, err := load_post(post_md)
+	post, status, err := posts.Get(postMD)
 	if err != nil {
 		errorHandler(w, r, status)
 		return
 	}
-	if err := post_template.ExecuteTemplate(w, "layout", post); err != nil {
+	if err := postTemplate.ExecuteTemplate(w, "layout", post); err != nil {
 		log.Println(err.Error())
 		errorHandler(w, r, 500)
 	}
 }
 
-// Загружает markdown-файл и конвертирует его в HTML
-// Возвращает объект типа Post
-// Если путь не существует или является каталогом, то возвращаем ошибку
-func load_post(md string) (Post, int, error) {
-	info, err := os.Stat(md)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// файл не существует
-			return Post{}, http.StatusNotFound, err
-		}
-		return Post{}, 500, err
-	}
-	if info.IsDir() {
-		// не файл, а папка
-		return Post{}, http.StatusNotFound, fmt.Errorf("dir")
-	}
-	val, ok := cache[md]
-	if !ok || (ok && val.ModTime != info.ModTime().UnixNano()) {
-		fileread, _ := ioutil.ReadFile(md)
-		lines := strings.Split(string(fileread), "\n")
-		title := string(lines[0])
-		body := strings.Join(lines[1:len(lines)], "\n")
-		body = string(blackfriday.MarkdownCommon([]byte(body)))
-		cache[md] = CacheEntry{info.ModTime().UnixNano(), title, template.HTML(body)}
-	}
-	post := Post{cache[md].title, cache[md].Body}
-	return post, 200, nil
-}
-
 func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
 	log.Printf("error %d %s %s\n", status, r.RemoteAddr, r.URL.Path)
 	w.WriteHeader(status)
-	if err := error_template.ExecuteTemplate(w, "layout", map[string]interface{}{"Error": http.StatusText(status), "Status": status}); err != nil {
+	if err := errorTemplate.ExecuteTemplate(w, "layout", map[string]interface{}{"Error": http.StatusText(status), "Status": status}); err != nil {
 		log.Println(err.Error())
 		http.Error(w, http.StatusText(500), 500)
 		return
