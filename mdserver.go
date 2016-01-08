@@ -10,6 +10,10 @@ import (
 	"github.com/bmizerany/pat"
 )
 
+const (
+	configFileName = "mdserver.yaml"
+)
+
 var (
 	// компилируем шаблоны, если не удалось, то выходим
 	postTemplate  = template.Must(template.ParseFiles(path.Join("templates", "layout.html"), path.Join("templates", "post.html")))
@@ -18,6 +22,10 @@ var (
 )
 
 func main() {
+	cfg, err := readConfig(configFileName)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// для отдачи сервером статичных файлов из папки public/static
 	fs := noDirListing(http.FileServer(http.Dir("./public/static")))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
@@ -31,8 +39,8 @@ func main() {
 	mux.Get("/", http.HandlerFunc(postHandler))
 
 	http.Handle("/", mux)
-	log.Println("Listening...")
-	http.ListenAndServe(":8890", nil)
+	log.Printf("Listening %s...", cfg.Listen)
+	log.Fatalln(http.ListenAndServe(cfg.Listen, nil))
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
