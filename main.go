@@ -1,18 +1,29 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/bmizerany/pat"
+	"github.com/russross/blackfriday"
+	"gopkg.in/yaml.v2"
 )
 
 const (
 	configFileName = "mdserver.yaml"
 )
+
+// Config - структура для считывания конфигурационного файла
+type Config struct {
+	Listen string `yaml:"listen"`
+}
 
 var (
 	// компилируем шаблоны, если не удалось, то выходим
@@ -23,9 +34,11 @@ var (
 
 func main() {
 	cfg, err := readConfig(configFileName)
+
 	if err != nil {
 		log.Fatalln(err)
 	}
+
 	// для отдачи сервером статичных файлов из папки public/static
 	fs := noDirListing(http.FileServer(http.Dir("./public/static")))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
@@ -54,6 +67,7 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	p := path.Join("posts", page)
 
 	var postMD string
+
 	if page != "" {
 		// если page не пусто, то считаем, что запрашивается файл
 		// получим posts/p1.md
@@ -64,10 +78,12 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	post, status, err := posts.Get(postMD)
+
 	if err != nil {
 		errorHandler(w, r, status)
 		return
 	}
+
 	if err := postTemplate.ExecuteTemplate(w, "layout", post); err != nil {
 		log.Println(err.Error())
 		errorHandler(w, r, 500)
@@ -96,4 +112,70 @@ func noDirListing(h http.Handler) http.HandlerFunc {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func readConfig(ConfigName string) (conf *Config, err error) {
+	var file []byte
+
+	file, err = ioutil.ReadFile(ConfigName)
+
+	if err != nil {
+		return nil, err
+	}
+
+	err = yaml.Unmarshal(file, conf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return conf, nil
+}
+
+type post struct {
+	Title   string
+	Body    template.HTML
+	ModTime int64
+}
+
+type postArray struct {
+	Items map[string]post
+	sync.RWMutex
+}
+
+func newPostArray() *postArray {
+	p := postArray{}
+	p.Items = make(map[string]post)
+	return &p
+}
+
+// Get Загружает markdown-файл и конвертирует его в HTML
+// Возвращает объект типа Post
+// Если путь не существует или является каталогом, то возвращаем ошибку
+func (p *postArray) Get(md string) (post, int, error) {
+	info, err := os.Stat(md)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// файл не существует
+			return post{}, 404, err
+		}
+		return post{}, 500, err
+	}
+	if info.IsDir() {
+		// не файл, а папка
+		return post{}, 404, fmt.Errorf("dir")
+	}
+	val, ok := p.Items[md]
+	if !ok || (ok && val.ModTime != info.ModTime().UnixNano()) {
+		p.RLock()
+		defer p.RUnlock()
+		fileread, _ := ioutil.ReadFile(md)
+		lines := strings.Split(string(fileread), "\n")
+		title := string(lines[0])
+		body := strings.Join(lines[1:], "\n")
+		body = string(blackfriday.MarkdownCommon([]byte(body)))
+		p.Items[md] = post{title, template.HTML(body), info.ModTime().UnixNano()}
+	}
+	post := p.Items[md]
+	return post, 200, nil
 }
