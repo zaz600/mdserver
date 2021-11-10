@@ -1,4 +1,4 @@
-module github.com/eleksir/mdserver
+module github.com/zaz600/mdserver
 
 go 1.16
 
