@@ -81,10 +81,13 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		errorHandler(w, r, status)
+
 		return
 	}
 
-	if err := postTemplate.ExecuteTemplate(w, "layout", post); err != nil {
+	err := postTemplate.ExecuteTemplate(w, "layout", post)
+
+	if err != nil {
 		log.Println(err.Error())
 		errorHandler(w, r, 500)
 	}
@@ -93,9 +96,13 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
 	log.Printf("error %d %s %s\n", status, r.RemoteAddr, r.URL.Path)
 	w.WriteHeader(status)
-	if err := errorTemplate.ExecuteTemplate(w, "layout", map[string]interface{}{"Error": http.StatusText(status), "Status": status}); err != nil {
+
+	err := errorTemplate.ExecuteTemplate(w, "layout", map[string]interface{}{"Error": http.StatusText(status), "Status": status})
+
+	if err != nil {
 		log.Println(err.Error())
 		http.Error(w, http.StatusText(500), 500)
+
 		return
 	}
 }
@@ -108,8 +115,10 @@ func noDirListing(h http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/") || r.URL.Path == "" {
 			http.NotFound(w, r)
+
 			return
 		}
+
 		h.ServeHTTP(w, r)
 	})
 }
@@ -146,6 +155,7 @@ type postArray struct {
 func newPostArray() *postArray {
 	p := postArray{}
 	p.Items = make(map[string]post)
+
 	return &p
 }
 
@@ -154,18 +164,23 @@ func newPostArray() *postArray {
 // Если путь не существует или является каталогом, то возвращаем ошибку
 func (p *postArray) Get(md string) (post, int, error) {
 	info, err := os.Stat(md)
+
 	if err != nil {
 		if os.IsNotExist(err) {
 			// файл не существует
 			return post{}, 404, err
 		}
+
 		return post{}, 500, err
 	}
+
 	if info.IsDir() {
 		// не файл, а папка
 		return post{}, 404, fmt.Errorf("dir")
 	}
+
 	val, ok := p.Items[md]
+
 	if !ok || (ok && val.ModTime != info.ModTime().UnixNano()) {
 		p.RLock()
 		defer p.RUnlock()
@@ -176,6 +191,8 @@ func (p *postArray) Get(md string) (post, int, error) {
 		body = string(blackfriday.MarkdownCommon([]byte(body)))
 		p.Items[md] = post{title, template.HTML(body), info.ModTime().UnixNano()}
 	}
+
 	post := p.Items[md]
+
 	return post, 200, nil
 }
